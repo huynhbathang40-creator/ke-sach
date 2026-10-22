@@ -617,7 +617,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
     <button class="btn primary" id="addBtn" type="button">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Thêm sách</button>
   </div>
-  <div class="bar-in" id="readBar">
+  <div class="bar-in" id="readBar" hidden>
     <button class="icon-btn" id="backBtn" type="button" aria-label="Về kệ sách"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></button>
     <div class="grow"><div class="rtitle" id="rTitle"></div><div class="rsub" id="rSub"></div></div>
     <div class="seg" role="group" aria-label="Chế độ">
@@ -732,7 +732,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
     </section>
   </section>
 
-  <section id="readView" class="reader">
+  <section id="readView" class="reader" hidden>
     <div class="langbar">
       <div class="seg" role="group" aria-label="Ngôn ngữ hiển thị" id="langSeg">
         <button type="button" data-lang="en" aria-pressed="true">English</button>
@@ -750,7 +750,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   </section>
 </main>
 
-<nav class="dock zoomable" id="dock" aria-label="Chuyển phần">
+<nav class="dock zoomable" id="dock" aria-label="Chuyển phần" hidden>
   <button class="dock-font sm" id="dSmaller" type="button" aria-label="Chữ nhỏ hơn">A</button>
   <span class="dock-sep" aria-hidden="true"></span>
   <button class="dock-btn" id="dPrev" type="button" aria-label="Phần trước"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></button>
@@ -760,7 +760,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   <button class="dock-font lg" id="dBigger" type="button" aria-label="Chữ to hơn">A</button>
 </nav>
 
-<div class="player zoomable" id="player">
+<div class="player zoomable" id="player" hidden>
   <div class="player-in">
     <div class="ctrls">
       <button class="icon-btn" id="pBackSec" type="button" aria-label="Về đầu phần"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"></path></svg></button>
@@ -791,7 +791,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   </div>
 </div>
 
-<div class="sheet-bg" id="addSheet">
+<div class="sheet-bg" id="addSheet" hidden>
   <div class="sheet zoomable" role="dialog" aria-modal="true" aria-labelledby="addTitle">
     <div class="sheet-top"><h2 class="grow" id="addTitle">Thêm sách</h2><button class="icon-btn" data-close="" type="button" aria-label="Đóng"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
     <div class="drop" id="drop">
@@ -808,7 +808,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   </div>
 </div>
 
-<div class="sheet-bg" id="setSheet">
+<div class="sheet-bg" id="setSheet" hidden>
   <div class="sheet zoomable" role="dialog" aria-modal="true" aria-labelledby="setTitle">
     <div class="sheet-top"><h2 class="grow" id="setTitle">Cài đặt</h2><button class="icon-btn" data-close="" type="button" aria-label="Đóng"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
     <div class="field">
@@ -874,7 +874,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   </div>
 </div>
 
-<div class="sheet-bg" id="tocSheet">
+<div class="sheet-bg" id="tocSheet" hidden>
   <div class="sheet zoomable" role="dialog" aria-modal="true" aria-labelledby="tocTitle">
     <div class="sheet-top"><h2 class="grow" id="tocTitle">Mục lục</h2><button class="icon-btn" data-close="" type="button" aria-label="Đóng"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
     <div class="hint"><div><b>Dịch trước cả cuốn</b> để đọc và nghe tiếng Việt không phải chờ. App dịch dần khi trang đang mở, kết quả lưu vào tài khoản nên iPhone cũng có ngay.</div><div><button class="btn small" type="button" id="trFullBtn">Dịch trước cả cuốn</button></div></div>
@@ -882,7 +882,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   </div>
 </div>
 
-<div class="study" id="study" role="dialog" aria-modal="true" aria-labelledby="stTitle">
+<div class="study" id="study" role="dialog" aria-modal="true" aria-labelledby="stTitle" hidden>
   <div class="st-bar"><div class="st-bar-in">
     <button class="icon-btn" id="stClose" type="button" aria-label="Đóng"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
     <div class="grow"><div class="rtitle" id="stTitle">Học</div><div class="rsub" id="stSub"></div></div>
@@ -902,12 +902,12 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   </div>
 </div>
 
-<div class="fn-pop zoomable" id="fnPop" role="dialog" aria-label="Chú thích">
+<div class="fn-pop zoomable" id="fnPop" role="dialog" aria-label="Chú thích" hidden>
   <header><b id="fnPopN">Chú thích</b><span class="grow"></span><button class="icon-btn" id="fnPopClose" type="button" aria-label="Đóng chú thích"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></header>
   <p id="fnPopText"></p>
 </div>
-<button class="btn jump-back zoomable" id="jumpBack" type="button">↩ Quay lại chỗ đang đọc</button>
-<div class="toast" id="toast"></div>
+<button class="btn jump-back zoomable" id="jumpBack" type="button" hidden>↩ Quay lại chỗ đang đọc</button>
+<div class="toast" id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="/platform.js"></script>
