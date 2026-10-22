@@ -412,6 +412,8 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
 
 .zoomable { zoom: var(--ui-zoom, 1); }
 
+.st-in.zoomable { zoom: var(--st-zoom, 1); }
+
 .study { position: fixed; inset: 0px; z-index: 15; background: var(--bg); overflow-y: auto; padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) calc(32px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 
 .st-bar { position: sticky; top: 0px; z-index: 2; background: color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); margin: 0 calc(-1 * max(16px, env(safe-area-inset-right, 0px))) 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding: 0 max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); }
@@ -551,6 +553,33 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
 .fc-done { text-align: center; display: grid; gap: 10px; justify-items: center; padding: 30px 0px; }
 
 .fc-done h3 { margin: 0px; font-family: var(--f-serif); font-weight: 500; font-size: 24px; }
+
+@media (max-width: 600px) {
+  .st-in { padding-block: 14px 28px; gap: 14px; }
+  .mm { gap: 12px; }
+  .mm-root { font-size: 17px; padding: 10px 16px; }
+  .mm-branches { gap: 10px; }
+  .mm-br { padding: 2px 12px 10px; border-radius: 14px; }
+  .mm-br > summary { gap: 8px; padding: 10px 0px 4px; }
+  .mm-br > summary b { font-size: 15px; }
+  .mm-note { font-size: 12.5px; }
+  .mm-node b { font-size: 13.5px; }
+  .mm-node .mm-note { font-size: 12px; }
+  .mm-tree li { padding: 4px 0px 3px 10px; }
+  .fc, .fc-inner { min-height: 220px; }
+  .fc-face { padding: 18px 16px; border-radius: 16px; }
+  .fc-q { font-size: 18px; line-height: 1.35; }
+  .fc-a { font-size: 15.5px; line-height: 1.5; }
+  .fc-en { font-size: 13px; }
+  .fc-stat { padding: 8px 12px; min-width: 76px; }
+  .fc-stat b { font-size: 18px; }
+  .fc-rate button { padding: 8px 2px; font-size: 13px; }
+  .fc-item { padding: 12px 14px; }
+  .fc-item b { font-size: 15px; }
+  .fc-item p { font-size: 13.5px; }
+  .st-empty h3 { font-size: 19px; }
+  .fc-done h3 { font-size: 20px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; transition: none !important; }
@@ -886,6 +915,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
   <div class="st-bar"><div class="st-bar-in">
     <button class="icon-btn" id="stClose" type="button" aria-label="Đóng"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
     <div class="grow"><div class="rtitle" id="stTitle">Học</div><div class="rsub" id="stSub"></div></div>
+    <span class="pfont"><button type="button" id="stSmaller" aria-label="Thu nhỏ thẻ và sơ đồ" style="font-size:12px">A</button><button type="button" id="stBigger" aria-label="Phóng to thẻ và sơ đồ" style="font-size:17px">A</button></span>
     <div class="seg" role="group" aria-label="Chế độ học" id="stTabs">
       <button type="button" data-tab="map" aria-pressed="true">Sơ đồ</button>
       <button type="button" data-tab="cards" aria-pressed="false">Thẻ</button>
@@ -928,7 +958,7 @@ const S = {
   db: null, uid: null, prof: null, booksCol: null, chunksCol: null, sumCol: null,
   books: [], book: null, blocks: null, sections: [], secIdx: 0, pos: { b: 0, s: 0 },
   mode: 'read', view: 'library', playing: false, lastLocalT: 0, ignoreScroll: false,
-  dev: { fontSize: /iPhone|Android/.test(navigator.userAgent) ? 17 : 19, ui: /iPhone|Android/.test(navigator.userAgent) ? 0.93 : 1 },
+  dev: { fontSize: /iPhone|Android/.test(navigator.userAgent) ? 17 : 19, ui: /iPhone|Android/.test(navigator.userAgent) ? 0.93 : 1, st: 1 },
   study: [], studyCol: null,
   settings: { ttsEngine: 'chirp', chirpVi: 'Aoede', chirpEn: 'Aoede', codeMode: 'summary', rate: 1.25, lang: 'en', listenLang: 'en', rt: 'auto', ff: 'serif' },
   tr: new Map(), trLoaded: new Set(), trLoading: new Map(), trPending: new Map(), trQ: [], trActive: 0, trFailed: new Set(), trPauseUntil: 0, trRL: 0, trFull: null, trCol: null,
@@ -2731,6 +2761,8 @@ function applySettings() {
   const root = document.documentElement;
   root.style.setProperty('--read-size', S.dev.fontSize + 'px');
   root.style.setProperty('--ui-zoom', S.dev.ui);
+  root.style.setProperty('--st-zoom', S.dev.ui * S.dev.st);
+  $('#stSmaller').disabled = S.dev.st <= 0.6; $('#stBigger').disabled = S.dev.st >= 1.4;
   document.querySelectorAll('input[name="uiz"]').forEach(r => r.checked = +r.value === +S.dev.ui);
   $('#dSmaller').disabled = S.dev.fontSize <= 13; $('#dBigger').disabled = S.dev.fontSize >= 28;
   if (S.settings.rt && S.settings.rt !== 'auto') root.dataset.rt = S.settings.rt; else delete root.dataset.rt;
@@ -2768,6 +2800,10 @@ function setFont(px) {
 }
 ['dSmaller', 'pSmaller'].forEach(id => $('#' + id).onclick = () => setFont(S.dev.fontSize - 1));
 ['dBigger', 'pBigger'].forEach(id => $('#' + id).onclick = () => setFont(S.dev.fontSize + 1));
+/* card and mind map size, separate from the reading font */
+function setStudySize(v) { S.dev.st = Math.round(Math.max(0.6, Math.min(1.4, v)) * 10) / 10; saveDev(); applySettings(); }
+$('#stSmaller').onclick = () => setStudySize(S.dev.st - 0.1);
+$('#stBigger').onclick = () => setStudySize(S.dev.st + 0.1);
 document.querySelectorAll('input[name="codeMode"]').forEach(r => r.onchange = () => { S.settings.codeMode = r.value; saveSettings(); });
 document.querySelectorAll('input[name="rt"]').forEach(r => r.onchange = () => { S.settings.rt = r.value; applySettings(); saveSettings(); });
 document.querySelectorAll('input[name="ff"]').forEach(r => r.onchange = () => { S.settings.ff = r.value; applySettings(); saveSettings(); });
