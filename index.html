@@ -2150,7 +2150,7 @@ function updateBlocks(list) {
   if (after && before !== null) { const d = after.getBoundingClientRect().top - before; if (Math.abs(d) > 1) { S.ignoreScroll = true; window.scrollBy(0, d); setTimeout(() => S.ignoreScroll = false, 300); } }
   if (S.mode === 'listen') highlight(false);
 }
-const TR_PAR = 3; // batches translated at the same time
+const TR_PAR = 8; // batches translated at the same time (paid Gemini tier allows far more)
 function queueBatch(bt, front, fast) {
   const key = S.book.id + ':' + bt.from;
   if (S.trPending.has(key)) { const j = S.trPending.get(key); if (front) { j.fast = j.fast || !!fast; const i = S.trQ.indexOf(j); if (i > 0) { S.trQ.splice(i, 1); S.trQ.unshift(j); } } return j.p; }
