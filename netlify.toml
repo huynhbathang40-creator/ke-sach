@@ -1,0 +1,10 @@
+# Static site: no build step, publish the repo root.
+[build]
+  publish = "."
+  command = ""
+
+# Always fetch a fresh service worker so updates reach the phone.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
