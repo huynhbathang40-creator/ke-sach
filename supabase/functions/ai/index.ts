@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
   if (!q.ok) return q.res;
 
   const fast = !!body.fast, asJson = !!body.json, stream = !!body.stream;
-  let last = "";
+  let last = "", limited = false;
   for (const model of models(fast)) {
     let r = await call(model, key, prompt, asJson, true, stream);
     if (r.status === 400) {
@@ -60,8 +60,9 @@ Deno.serve(async (req: Request) => {
       last = "empty_answer"; continue;
     }
     last = `${r.status} ${(await r.text()).slice(0, 300)}`;
-    if (r.status === 429) return json({ error: "rate_limited", detail: last }, 429);
+    if (r.status === 429) { limited = true; continue; } // each model has its own free-tier quota, so try the next one
     if (r.status !== 404 && r.status !== 400) break;
   }
+  if (limited) return json({ error: "rate_limited", detail: last }, 429);
   return json({ error: "ai_error", detail: last }, 502);
 });
