@@ -225,6 +225,27 @@ hr.sep { border-right: 0px; border-bottom: 0px; border-left: 0px; border-image: 
 #orig { display: none; }
 body.orig #orig { display: block; }
 body.orig #content, body.orig .reader > .secnav, body.orig #secLabel { display: none !important; }
+#oDoc { display: none; }
+body.orig-paged #oDoc { display: block; overflow-x: auto; margin: 0 -8px; padding: 0 8px; }
+body.orig-paged #oFrameWrap, body.orig-paged #oNav { display: none !important; }
+.opg { position: relative; margin: 0 auto 18px; background: #fff; box-shadow: var(--shadow); border-radius: 2px; overflow: hidden; }
+.opg canvas { position: absolute; inset: 0px; width: 100%; height: 100%; display: block; }
+.opg .textLayer { position: absolute; inset: 0px; overflow: hidden; line-height: 1; text-align: initial; opacity: 1; z-index: 2; -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0px 0px; caret-color: CanvasText; }
+.opg .textLayer span, .opg .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.opg .textLayer span.ks-sn { position: static; }
+.opg .textLayer ::selection { background: rgb(0 90 255 / .25); }
+.opg .textLayer .ks-on { background: rgb(255 196 0 / .45); border-radius: 2px; }
+.opg .textLayer [data-ksb].ks-on { background: rgb(52 74 133 / .16); }
+.opg .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0px 0px; z-index: -1; cursor: default; user-select: none; }
+body.listening .opg .textLayer span[data-ksb] { cursor: pointer; }
+.opg-vi { margin: -6px auto 22px; padding: 12px 16px; border-left: 3px solid var(--vi-line); background: var(--raise); border-radius: 0px 10px 10px 0px; color: var(--vi-ink); font-family: var(--f-read); font-size: 16.5px; line-height: 1.6; }
+.opg-vi p { margin: 0px 0px 0.6em; } .opg-vi p.h { font-weight: 600; }
+.opg-vi .ks-on, .otext .ks-on { background: var(--hl); color: var(--hl-ink); border-radius: 3px; box-shadow: 0 0 0 2px var(--hl); }
+.otext { font-family: var(--f-read); color: var(--ink); line-height: 1.6; }
+.otext .otp { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0px 0px 1em; }
+.otext .otp.ks-vi { color: var(--vi-ink); border-left: 2px solid var(--vi-line); padding-left: .8em; margin-top: -.5em; }
+.otext [data-ksb].ks-on { box-shadow: inset 4px 0 0 var(--accent); }
+body.listening .otext .ks-sn { cursor: pointer; }
 #oFrame { display: block; width: 100%; border: 0px; height: 400px; background: transparent; }
 .orig-msg { border: 1px solid var(--line); background: var(--raise); border-radius: 16px; padding: 18px 20px; font-family: var(--f-ui); font-size: 14.5px; line-height: 1.6; color: var(--ink); }
 .orig-msg p { margin: 0px; }
@@ -788,12 +809,13 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
     </nav>
     <div id="orig">
       <div class="orig-msg" id="oMsg" hidden></div>
+      <div id="oDoc"></div>
       <div id="oFrameWrap"><iframe id="oFrame" title="Nội dung sách (bản gốc)" scrolling="no"></iframe></div>
       <nav class="secnav" id="oNav" aria-label="Cuối chương">
         <button class="next-card" id="oNext" type="button"><small>Tiếp theo</small><strong></strong></button>
         <button class="prev-link" id="oPrev" type="button">← Quay lại chương trước</button>
       </nav>
-      <input id="oFile" type="file" accept=".epub,application/epub+zip" hidden>
+      <input id="oFile" type="file" accept=".epub,.pdf,.txt,.md,.markdown,application/epub+zip,application/pdf,text/plain" hidden>
     </div>
   </section>
 </main>
@@ -1582,7 +1604,7 @@ async function saveBook(res, format, status) {
   return id;
 }
 async function deleteBook(id) {
-  const ep = S.books.find(b => b.id === id)?.epub;
+  const bk0 = S.books.find(b => b.id === id), ep = bk0?.epub || bk0?.orig;
   await S.booksCol.doc(id).delete();
   try { await window.audioCache?.removeBook(id); } catch (e) { console.warn(e); }
   try {
@@ -1697,7 +1719,7 @@ async function importFile(file) {
     else if (['txt', 'md', 'markdown'].includes(ext)) res = parsePlain(await file.text(), ext !== 'txt', file.name);
     else throw new Error('Chỉ hỗ trợ PDF, EPUB, TXT, MD.');
     const newId = await saveBook(res, ext === 'markdown' ? 'md' : ext, stat);
-    if (ext === 'epub' && window.O) { stat('Đang lưu bản gốc của sách…'); try { await O.attach(newId, file); } catch (e) { console.warn('epub original', e); } }
+    if (window.O && ['epub', 'pdf', 'txt', 'md', 'markdown'].includes(ext)) { stat('Đang lưu bản gốc của sách…'); try { await O.attach(newId, file, ext === 'markdown' ? 'md' : ext); } catch (e) { console.warn('original file', e); } }
     stat(`Đã thêm "${res.title}".`); setTimeout(() => { closeSheets(); stat(''); }, 900);
   } catch (e) {
     console.error(e);
@@ -2928,5 +2950,6 @@ window.__kesachBoot = () => connect().catch(e => { console.error(e); setSync(fal
 })();
 </script>
 <script src="orig.js"></script>
+<script src="origpage.js"></script>
 </body>
 </html>

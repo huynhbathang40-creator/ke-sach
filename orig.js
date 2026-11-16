@@ -31,15 +31,18 @@ const idb = (() => {
   return { get: k => run('readonly', s => s.get(k)), set: (k, v) => run('readwrite', s => s.put(v, k)), del: k => run('readwrite', s => s.delete(k)) };
 })();
 const assets = async () => (window.claude?.use ? await window.claude.use('assets') : null);
-const epubOf = bk => bk && (bk.epub || O.local.get(bk.id)) || null;
-const isEpub = bk => bk && bk.format === 'epub';
+const epubOf = bk => bk && (bk.epub || bk.orig || O.local.get(bk.id)) || null;
+const isEpub = bk => bk && ['epub', 'pdf', 'txt', 'md'].includes(bk.format);   // every format with an original view
+const OP = () => window.OP;                                                       // PDF / text engine (origpage.js)
+const paged = () => O.kind && O.kind !== 'epub' && OP();
 
 /* save the original file with a book (called on import, or later for books added before this feature) */
-O.attach = async (bookId, file) => {
+const TYPES = { epub: 'application/epub+zip', pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown' };
+O.attach = async (bookId, file, format = 'epub') => {
   const A = await assets(); if (!A) throw new Error('Chưa kết nối được tài khoản.');
-  const blob = new Blob([file], { type: 'application/epub+zip' });
+  const blob = new Blob([file], { type: TYPES[format] || 'application/octet-stream' });
   const up = await A.upload(blob);
-  await S.booksCol.doc(bookId).update({ epub: up.id });
+  await S.booksCol.doc(bookId).update(format === 'epub' ? { epub: up.id } : { orig: up.id });
   O.local.set(bookId, up.id); idb.set(up.id, blob);
   return up.id;
 };
@@ -132,6 +135,7 @@ async function docAt(B, path) {
 }
 function closeBook() {
   const B = O.book; if (!B) return;
+  if (!B.urls) { O.book = null; return; }
   for (const p of [...B.urls.values(), ...B.chUrls.values()]) Promise.resolve(p).then(u => u && URL.revokeObjectURL(u));
   O.book = null;
 }
@@ -271,19 +275,24 @@ O.sync = (fresh) => {
   if (want()) { if (!O.on || fresh) enter(); else if (S.mode === 'read') clearHL(); }
   else if (O.on) leave();
 };
-O.close = () => { O.on = false; O.tok++; document.body.classList.remove('orig'); const f = frame(); if (f) f.removeAttribute('src'); };
+O.close = () => { if (OP()) OP().close(); O.on = false; O.tok++; document.body.classList.remove('orig'); const f = frame(); if (f) f.removeAttribute('src'); };
 
 async function enter() {
   O.on = true; document.body.classList.add('orig'); const bk = S.book, tok = ++O.tok;
   $('#fnPop').hidden = true;
+  if (OP()) OP().close();
+  O.kind = bk.format;
+  document.body.classList.toggle('orig-paged', O.kind !== 'epub');
+  const FMT = { epub: 'EPUB', pdf: 'PDF', txt: 'TXT', md: 'Markdown' }[O.kind] || '';
   if (!epubOf(bk)) {
-    msg(`Để xem cuốn này đúng như trên MacBook (font, hình, khung code của nhà xuất bản), hãy chọn lại file EPUB của nó. Chỉ cần làm một lần, sau đó iPhone cũng xem được.`,
-      `<button class="btn primary" type="button" id="oPick">Chọn file EPUB</button><button class="btn" type="button" id="oClean">Dùng bản gọn</button>`);
+    msg(`Để xem cuốn này đúng như file gốc (font, hình, bố cục của nhà xuất bản), hãy chọn lại file ${FMT} của nó. Chỉ cần làm một lần, sau đó iPhone cũng xem được.`,
+      `<button class="btn primary" type="button" id="oPick">Chọn file ${FMT}</button><button class="btn" type="button" id="oClean">Dùng bản gọn</button>`);
     $('#oPick').onclick = () => $('#oFile').click();
     $('#oClean').onclick = () => setView('clean');
     updateBar(); return;
   }
   msg('Đang mở bản gốc…');
+  if (paged()) return OP().enter(bk, tok);
   try {
     const B = await loadBook(bk); if (tok !== O.tok) return;
     const saved = (() => { try { return JSON.parse(ls.get('opos:' + bk.id) || 'null'); } catch { return null; } })();
@@ -296,7 +305,8 @@ async function enter() {
   }
 }
 function leave() {
-  O.on = false; O.tok++; document.body.classList.remove('orig'); $('#jumpBack').hidden = true;
+  if (OP()) OP().close();
+  O.on = false; document.body.classList.remove('orig-paged'); O.tok++; document.body.classList.remove('orig'); $('#jumpBack').hidden = true;
   if (S.blocks) goTo(S.pos.b, 0);
 }
 function setView(v) { S.settings.view = v; saveSettings(); O.sync(); }
@@ -368,6 +378,7 @@ function starts() {
   B.firsts.forEach((f, i) => {
     if (!f) return; const probe = f.slice(0, 40);
     for (let b = from; b < n; b++) { const k = keys[b]; if (k && (k.startsWith(probe) || (k.length >= 12 && probe.startsWith(k)))) { st[i] = b; from = b; break; } }
+    if (st[i] < 0 && B.sub && probe.length >= 16) { const pr = probe.slice(0, 24); for (let b = from; b < Math.min(n, from + 600); b++) if (keys[b] && keys[b].includes(pr)) { st[i] = b; from = b; break; } }
   });
   // chapters with no text (cover, images) or no match: interpolate by chapter length
   const bc = blockCum();
@@ -398,7 +409,7 @@ function fromBlock(b) {
 }
 const globalPct = () => O.book ? (O.book.cumW[O.i] + O.f * O.book.weights[O.i]) / O.book.totalW : 0;
 let raf = false;
-window.addEventListener('scroll', () => { if (!O.on || !O.book || O.ignore || raf) return; raf = true; requestAnimationFrame(() => { raf = false; track(); }); }, { passive: true });
+window.addEventListener('scroll', () => { if (!O.on || !O.book || O.ignore || raf) return; raf = true; requestAnimationFrame(() => { raf = false; paged() ? OP().track() : track(); }); }, { passive: true });
 function track() {
   const f = frame(); if (!f || $('#oFrameWrap').hidden) return;
   const r = f.getBoundingClientRect(); if (r.height < 10) return;
@@ -411,6 +422,7 @@ function track() {
 O.updateBar = () => updateBar();
 function updateBar() {
   const B = O.book;
+  if (B && paged()) return OP().updateBar();
   if (!B) { $('#rSub').textContent = ''; $('#dLabel').textContent = 'Bản gốc'; $('#dPct').textContent = ''; $('#dPrev').disabled = true; $('#dNext').disabled = true; return; }
   const pct = Math.round(globalPct() * 100), title = B.titles[O.i] || '';
   $('#rSub').textContent = `${pct}% · ${title}`;
@@ -425,16 +437,16 @@ function updateNav() {
   $('#oNext small').textContent = last ? 'Hết sách' : 'Tiếp theo';
   $('#oNext strong').textContent = last ? 'Bạn đã tới phần cuối cùng.' : (B.titles[O.i + 1] && B.titles[O.i + 1] !== B.titles[O.i] ? B.titles[O.i + 1] : `Chương ${O.i + 2}`);
 }
-O.next = () => { if (O.book && O.i < O.book.spine.length - 1) render(O.i + 1, { f: 0 }); };
-O.prev = () => { if (O.book && O.i > 0) render(O.i - 1, { f: 0 }); };
-O.goBlock = b => { if (!O.book) return; const p = fromBlock(b); render(p.i, { f: p.f }); };
+O.next = () => { if (paged()) return OP().go(O.i + 1); if (O.book && O.i < O.book.spine.length - 1) render(O.i + 1, { f: 0 }); };
+O.prev = () => { if (paged()) return OP().go(O.i - 1); if (O.book && O.i > 0) render(O.i - 1, { f: 0 }); };
+O.goBlock = b => { if (!O.book) return; if (paged()) return OP().goBlock(b); const p = fromBlock(b); render(p.i, { f: p.f }); };
 function goHref(path, id) {
   const B = O.book; const i = B.spineIdx.get(path); if (i === undefined) return false;
   if (i === O.i && frameDoc()) { O.target = { id }; O.restoreUntil = 0; place(); setTimeout(track, 150); }
   else render(i, { id, f: 0 });
   return true;
 }
-O.back = () => { const p = O.jumpFrom; O.jumpFrom = null; $('#jumpBack').hidden = true; if (p) render(p.i, { f: p.f }); };
+O.back = () => { const p = O.jumpFrom; O.jumpFrom = null; $('#jumpBack').hidden = true; if (p) paged() ? OP().go(p.i, p.f) : render(p.i, { f: p.f }); };
 
 /* ---------- sentences inside the original layout ---------- */
 const BLOCKS = new Set(['p','div','section','article','blockquote','ul','ol','li','h1','h2','h3','h4','h5','h6','pre','table','tbody','thead','tr','td','th','dl','dt','dd','figure','figcaption','aside','header','footer','main','body','hr','nav']);
@@ -460,8 +472,12 @@ function alignChapter(els, s, e) {
   for (const el of els) {
     const K = key4(el.textContent); if (!K || bi >= bk.length) continue;
     if (!same(K, 0, bi, bo)) {
-      let hit = -1; for (let j = bi; j < Math.min(bk.length, bi + 10); j++) if (same(K, 0, j, 0)) { hit = j; break; }
-      if (hit < 0) continue; bi = hit; bo = 0;
+      let hit = -1, off = 0; for (let j = bi; j < Math.min(bk.length, bi + 10); j++) if (same(K, 0, j, 0)) { hit = j; break; }
+      if (hit < 0 && K.length >= 10) {
+        const pr = K.slice(0, Math.min(24, K.length));
+        for (let j = bi; j < Math.min(bk.length, bi + 10); j++) { const o = bk[j].k.indexOf(pr, j === bi ? bo : 0); if (o >= 0) { hit = j; off = o; break; } }
+      }
+      if (hit < 0) continue; bi = hit; bo = off;
     }
     let pos = 0; const parts = [];
     while (pos < K.length && bi < bk.length) {
@@ -559,18 +575,19 @@ function applyLang(keepPlace = true) {
   fit();
   if (anchor && f) { const dlt = f.getBoundingClientRect().top + anchor.getBoundingClientRect().top - before; if (Math.abs(dlt) > 1) { O.ignore = true; window.scrollBy(0, dlt); setTimeout(() => { O.ignore = false; }, 150); } }
 }
-O.applyLang = () => { if (O.on && O.wrapped) applyLang(true); };
+O.applyLang = () => { if (paged()) return OP().applyLang(); if (O.on && O.wrapped) applyLang(true); };
 let trT = null;
-O.onTr = () => { if (!O.on || !O.wrapped || S.settings.lang === 'en') return; clearTimeout(trT); trT = setTimeout(() => { applyLang(true); if (S.mode === 'listen') O.highlight(false); }, 120); };
-O.ensureChapterTr = () => {
+O.onTr = () => { if (paged()) return OP().onTr(); if (!O.on || !O.wrapped || S.settings.lang === 'en') return; clearTimeout(trT); trT = setTimeout(() => { applyLang(true); if (S.mode === 'listen') O.highlight(false); }, 120); };
+O.ensureChapterTr = (i = O.i, j = i) => {
   if (!O.book || !S.blocks || S.settings.lang === 'en') return;
-  const st = starts(), s = st[O.i], e = O.i + 1 < st.length ? st[O.i + 1] : S.blocks.length;
+  const st = starts(), s = st[i], e = j + 1 < st.length ? st[j + 1] : S.blocks.length;
   const ks = new Set(); for (let b = s; b < Math.max(s + 1, e); b++) ks.add(sectionOf(Math.min(b, S.blocks.length - 1)));
   for (const k of ks) ensureSection(k);
 };
-function clearHL() { const d = frameDoc(); if (d) { for (const x of Array.from(d.querySelectorAll('.ks-on'))) x.classList.remove('ks-on'); d.body && d.body.classList.toggle('ks-listen', S.mode === 'listen'); } }
+function clearHL() { if (paged()) return OP().clearHL(); const d = frameDoc(); if (d) { for (const x of Array.from(d.querySelectorAll('.ks-on'))) x.classList.remove('ks-on'); d.body && d.body.classList.toggle('ks-listen', S.mode === 'listen'); } }
 O.highlight = (scroll = true) => {
   if (!O.book || !S.blocks) return;
+  if (paged()) return OP().highlight(scroll);
   const b = S.pos.b, ci = fromBlock(b).i;
   if (ci !== O.i || !O.wrapped) {
     O.hlScroll = scroll;
@@ -639,7 +656,7 @@ async function onFrameClick(e) {
 /* table of contents */
 O.toc = () => {
   const B = O.book; if (!B) { toast('Chưa mở được bản gốc.'); return; }
-  const list = B.toc.length ? B.toc.filter(t => t.i !== undefined) : B.spine.map((p, k) => ({ t: 'Chương ' + (k + 1), i: k, id: '', depth: 0, path: p }));
+  const list = B.toc.length ? B.toc.filter(t => t.i !== undefined) : paged() ? OP().fallbackToc() : B.spine.map((p, k) => ({ t: 'Chương ' + (k + 1), i: k, id: '', depth: 0, path: p }));
   let curIdx = -1; list.forEach((t, k) => { if (t.i <= O.i) curIdx = k; });
   O.tocList = list;
   $('#toc').innerHTML = list.map((t, k) => `<li style="${t.depth ? `padding-left:${Math.min(t.depth, 3) * 16}px` : ''}"><button type="button" data-oi="${k}" aria-current="${k === curIdx}"><span class="n">${t.depth ? '·' : k + 1}</span><span>${esc(t.t)}</span></button></li>`).join('');
@@ -650,28 +667,30 @@ O.toc = () => {
 $('#toc').addEventListener('click', e => {
   const b = e.target.closest('[data-oi]'); if (!b || !O.tocList) return;
   e.stopImmediatePropagation(); closeSheets();
-  const t = O.tocList[+b.dataset.oi]; render(t.i, { id: t.id, f: 0 });
+  const t = O.tocList[+b.dataset.oi]; if (paged()) OP().go(t.i, t.f || 0); else render(t.i, { id: t.id, f: 0 });
 }, true);
 
 /* theme / font changes */
 O.restyle = () => {
+  if (O.on && paged()) return OP().restyle();
   if (!O.on || !frameDoc()) return;
   const keep = O.f; styleFrame(); O.target = { f: keep }; O.restoreUntil = Date.now() + 1500;
   requestAnimationFrame(() => { fit(); place(); });
 };
-let rsT = null; window.addEventListener('resize', () => { if (!O.on) return; clearTimeout(rsT); const keep = O.f; rsT = setTimeout(() => { O.target = { f: keep }; O.restoreUntil = Date.now() + 1500; fit(); place(); }, 150); });
+let rsT = null; window.addEventListener('resize', () => { if (!O.on) return; if (paged()) return OP().restyle(); clearTimeout(rsT); const keep = O.f; rsT = setTimeout(() => { O.target = { f: keep }; O.restoreUntil = Date.now() + 1500; fit(); place(); }, 150); });
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => O.restyle()); } catch {}
 
+O._ = { S, idb, assets, msg, hideMsg, setView, starts, toBlock, fromBlock, blockCum, alignChapter, wrapText, key4, theme, clamp, XHTML, closeBook, updateSeg, epubOf, globalPct: () => globalPct() };
 /* ---------- controls ---------- */
 document.querySelectorAll('#viewSeg [data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 $('#oNext').onclick = () => O.next();
 $('#oPrev').onclick = () => O.prev();
 $('#oFile').addEventListener('change', async e => {
   const file = e.target.files[0]; e.target.value = ''; if (!file || !S.book) return;
-  if (!/\.epub$/i.test(file.name)) { toast('Hãy chọn file .epub'); return; }
-  const bk = S.book;
+  const bk = S.book, ext = (file.name.split('.').pop() || '').toLowerCase().replace('markdown', 'md');
+  if (ext !== bk.format) { toast(`Hãy chọn file .${bk.format} của cuốn này`); return; }
   msg('Đang lưu file gốc vào tài khoản…');
-  try { await O.attach(bk.id, file); if (S.book === bk) { toast('Đã lưu bản gốc'); enter(); } }
+  try { await O.attach(bk.id, file, bk.format); if (S.book === bk) { toast('Đã lưu bản gốc'); enter(); } }
   catch (err) { console.error(err); msg(esc(err.message || 'Không lưu được file.'), `<button class="btn primary" type="button" id="oPick">Thử lại</button><button class="btn" type="button" id="oClean">Dùng bản gọn</button>`); $('#oPick').onclick = () => $('#oFile').click(); $('#oClean').onclick = () => setView('clean'); }
 });
 })();
