@@ -224,8 +224,7 @@ hr.sep { border-right: 0px; border-bottom: 0px; border-left: 0px; border-image: 
 
 #orig { display: none; }
 body.orig #orig { display: block; }
-body.orig #content, body.orig .reader > .secnav, body.orig #secLabel, body.orig #langSeg, body.orig #trStatus { display: none !important; }
-body.orig.listening #langSeg { display: inline-flex !important; }
+body.orig #content, body.orig .reader > .secnav, body.orig #secLabel { display: none !important; }
 #oFrame { display: block; width: 100%; border: 0px; height: 400px; background: transparent; }
 .orig-msg { border: 1px solid var(--line); background: var(--raise); border-radius: 16px; padding: 18px 20px; font-family: var(--f-ui); font-size: 14.5px; line-height: 1.6; color: var(--ink); }
 .orig-msg p { margin: 0px; }
@@ -619,9 +618,9 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
 <title>Kệ Sách Kỹ Thuật</title>
 <meta name="theme-color" content="#F5F4EF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141519" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="icon" href="/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Kệ Sách">
@@ -960,7 +959,7 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/platform.js"></script>
+<script src="platform.js"></script>
 <script>
 (() => {
 'use strict';
@@ -2242,6 +2241,7 @@ function loadSec(k) {
 }
 function updateBlocks(list) {
   if (!S.blocks) return;
+  if (window.O && O.on) O.onTr(list);
   const anchor = $(`#content [data-b="${S.pos.b}"]`); const before = anchor ? anchor.getBoundingClientRect().top : null;
   for (const b of list) { sentCache.delete('vi' + b); const el = $(`#content [data-b="${b}"]`); if (el) el.outerHTML = blockHTML(b); }
   const after = $(`#content [data-b="${S.pos.b}"]`);
@@ -2357,7 +2357,9 @@ function onLangChanged() {
   if (S.view !== 'reader' || !S.blocks) return;
   const wasPlaying = S.playing; if (wasPlaying) stopPlay();
   S.pos.s = Math.min(S.pos.s, countFor(S.pos.b) - 1);
-  renderSection(S.secIdx); scrollToPos(); if (S.mode === 'listen') highlight(false);
+  renderSection(S.secIdx); scrollToPos();
+  if (window.O && O.on) { O.applyLang(); O.ensureChapterTr(); }
+  if (S.mode === 'listen') highlight(false);
   if (wasPlaying) play();
 }
 document.querySelectorAll('#langSeg [data-lang]').forEach(btn => btn.onclick = () => {
@@ -2906,11 +2908,11 @@ async function connect() {
   }, e => console.warn('study', e));
 }
 // shared with orig.js (original-layout EPUB view)
-window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play };
+window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play, ensureSection, sectionOf };
 renderLibrary();
 window.__kesachBoot = () => connect().catch(e => { console.error(e); setSync(false, 'Lỗi kết nối'); });
 })();
 </script>
-<script src="/orig.js"></script>
+<script src="orig.js"></script>
 </body>
 </html>

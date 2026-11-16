@@ -7,7 +7,7 @@
    it uses its globals (S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath…). */
 (() => {
 'use strict';
-const { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play } = window.KS;
+const { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play, ensureSection, sectionOf } = window.KS;
 const JSZIP = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
 const XHTML = 'http://www.w3.org/1999/xhtml', XLINK = 'http://www.w3.org/1999/xlink', OPS = 'http://www.idpf.org/2007/ops';
 const MIME = { css: 'text/css', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
@@ -201,7 +201,7 @@ function theme() {
   const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
   const probe = document.createElement('i'); probe.style.display = 'none'; document.body.appendChild(probe);
   const toRgb = c => { probe.style.color = ''; probe.style.color = c; return rgb(getComputedStyle(probe).color); };
-  const t = { ink: v('--ink'), bg: v('--bg'), link: v('--link'), hl: v('--hl'), hlInk: v('--hl-ink'), accent: v('--accent'), scheme: cs.colorScheme || 'light', inkRgb: toRgb(v('--ink')), bgRgb: toRgb(v('--bg')) };
+  const t = { ink: v('--ink'), bg: v('--bg'), link: v('--link'), hl: v('--hl'), hlInk: v('--hl-ink'), accent: v('--accent'), vi: v('--vi-ink'), viLine: v('--vi-line'), scheme: cs.colorScheme || 'light', inkRgb: toRgb(v('--ink')), bgRgb: toRgb(v('--bg')) };
   probe.remove(); t.dark = t.bgRgb ? lum(t.bgRgb) < 0.2 : false; return t;
 }
 const zoom = () => clamp((S.dev.fontSize || 19) / 18, 0.7, 1.6);
@@ -221,7 +221,10 @@ table{max-width:100%}
 ::selection{background:${t.hl}}
 .ks-sn.ks-on{background:${t.hl};color:${t.hlInk}!important;border-radius:3px;box-shadow:0 0 0 2px ${t.hl};-webkit-box-decoration-break:clone;box-decoration-break:clone}
 [data-ksb].ks-on{box-shadow:inset 4px 0 0 ${t.accent}!important}
-body.ks-listen .ks-sn{cursor:pointer}`;
+body.ks-listen .ks-sn{cursor:pointer}
+.ks-vi,.ks-vi *{color:${t.vi}!important}
+.ks-vi:not(.ks-vi-in){border-left:2px solid ${t.viLine}!important;padding-left:.8em!important;margin-top:.35em!important;text-indent:0!important}
+.ks-vi-in{display:block;margin-top:.3em;padding-left:.8em;border-left:2px solid ${t.viLine}}`;
   d.body && d.body.classList.toggle('ks-listen', S.mode === 'listen');
   fixContrast(d, t);
 }
@@ -321,6 +324,7 @@ function setupFrame() {
   for (const ev of ['wheel', 'touchstart', 'mousedown', 'keydown']) d.addEventListener(ev, userMoved, { passive: true });
   try { wrapChapter(d); } catch (e) { console.warn('wrap', e); }
   O.wrapped = true; O.pendingI = null;
+  if (S.settings.lang !== 'en') { try { applyLang(false); } catch (e) { console.warn('vi', e); } O.ensureChapterTr(); }
   fixContrast(d, theme());
   fit(); place();
   if (S.mode === 'listen') O.highlight(O.target?.hl ? O.hlScroll !== false : false);
@@ -502,9 +506,9 @@ function wrapChapter(d) {
   const st = starts(), s = st[O.i], e = O.i + 1 < st.length ? st[O.i + 1] : S.blocks.length;
   const cum = new Map();
   const sentCum = b => { if (cum.has(b)) return cum.get(b); const c = [0]; for (const x of sentencesOf(b, 'en')) c.push(c[c.length - 1] + key4(x).length); cum.set(b, c); return c; };
-  let matched = 0;
+  let matched = 0; O.items = [];
   for (const { el, parts } of alignChapter(leafBlocks(body), Math.max(0, s - 2), Math.min(S.blocks.length, e + 2))) {
-    el.setAttribute('data-ksb', [...new Set(parts.map(p => p.b))].join(' ')); matched++;
+    el.setAttribute('data-ksb', [...new Set(parts.map(p => p.b))].join(' ')); matched++; O.items.push({ el, parts, orig: null });
     const segs = [];
     for (const p of parts) {
       if (S.blocks[p.b].t === 'c') continue;
@@ -518,6 +522,52 @@ function wrapChapter(d) {
   }
   O.matched = matched;
 }
+/* ---------- Vietnamese inside the original layout ---------- */
+function viFrag(d, bs) {
+  const frag = d.createDocumentFragment();
+  bs.forEach((b, k) => {
+    if (k) frag.appendChild(d.createTextNode(' '));
+    sentencesOf(b, 'vi').forEach((x, j) => {
+      if (j) frag.appendChild(d.createTextNode(' '));
+      const sp = d.createElementNS(XHTML, 'span'); sp.setAttribute('class', 'ks-sn'); sp.setAttribute('data-b', b); sp.setAttribute('data-s', j); sp.setAttribute('data-l', 'vi');
+      sp.textContent = x; frag.appendChild(sp);
+    });
+  });
+  return frag;
+}
+function applyLang(keepPlace = true) {
+  const d = frameDoc(); if (!d || !O.items) return;
+  const L = S.settings.lang, f = frame();
+  // keep the paragraph at the top of the screen in place while text length changes
+  let anchor = null, before = 0;
+  if (keepPlace && f) { const ft = f.getBoundingClientRect().top, lim = headerBottom() + 8; for (const it of O.items) { const r = it.el.getBoundingClientRect(); if (ft + r.bottom > lim) { anchor = it.el; before = ft + r.top; break; } } }
+  for (const x of Array.from(d.querySelectorAll('.ks-vi'))) x.remove();
+  for (const it of O.items) {
+    const el = it.el;
+    if (it.orig) { el.replaceChildren(...it.orig); it.orig = null; }
+    if (L === 'en') continue;
+    const bs = [...new Set(it.parts.map(p => p.b))];
+    if (bs.some(b => S.blocks[b].t !== 'p' && S.blocks[b].t !== 'h')) continue;
+    const covered = bs.every(b => it.parts.filter(p => p.b === b).reduce((n, p) => n + p.len, 0) >= key4(S.blocks[b].x).length);
+    if (!covered || !bs.every(b => S.tr.has(b))) continue;
+    if (L === 'vi') { it.orig = Array.from(el.childNodes); el.replaceChildren(viFrag(d, bs)); continue; }
+    const tag = (el.localName || '').toLowerCase();
+    if (tag === 'tr') continue;
+    if (/^(li|td|th|dt|dd|figcaption)$/.test(tag)) { const sp = d.createElementNS(XHTML, 'span'); sp.setAttribute('class', 'ks-vi ks-vi-in'); sp.appendChild(viFrag(d, bs)); el.appendChild(sp); }
+    else { const sib = d.createElementNS(el.namespaceURI || XHTML, el.localName); const c = el.getAttribute('class'); sib.setAttribute('class', (c ? c + ' ' : '') + 'ks-vi'); const st = el.getAttribute('style'); if (st) sib.setAttribute('style', st); sib.appendChild(viFrag(d, bs)); el.after(sib); }
+  }
+  fit();
+  if (anchor && f) { const dlt = f.getBoundingClientRect().top + anchor.getBoundingClientRect().top - before; if (Math.abs(dlt) > 1) { O.ignore = true; window.scrollBy(0, dlt); setTimeout(() => { O.ignore = false; }, 150); } }
+}
+O.applyLang = () => { if (O.on && O.wrapped) applyLang(true); };
+let trT = null;
+O.onTr = () => { if (!O.on || !O.wrapped || S.settings.lang === 'en') return; clearTimeout(trT); trT = setTimeout(() => { applyLang(true); if (S.mode === 'listen') O.highlight(false); }, 120); };
+O.ensureChapterTr = () => {
+  if (!O.book || !S.blocks || S.settings.lang === 'en') return;
+  const st = starts(), s = st[O.i], e = O.i + 1 < st.length ? st[O.i + 1] : S.blocks.length;
+  const ks = new Set(); for (let b = s; b < Math.max(s + 1, e); b++) ks.add(sectionOf(Math.min(b, S.blocks.length - 1)));
+  for (const k of ks) ensureSection(k);
+};
 function clearHL() { const d = frameDoc(); if (d) { for (const x of Array.from(d.querySelectorAll('.ks-on'))) x.classList.remove('ks-on'); d.body && d.body.classList.toggle('ks-listen', S.mode === 'listen'); } }
 O.highlight = (scroll = true) => {
   if (!O.book || !S.blocks) return;
@@ -529,7 +579,7 @@ O.highlight = (scroll = true) => {
   }
   const d = frameDoc(); if (!d) return; clearHL();
   const bl = S.blocks[b]; let els = [];
-  if (bl.t !== 'c' && activeLang() === 'en') els = Array.from(d.querySelectorAll(`.ks-sn[data-b="${b}"][data-s="${S.pos.s}"]`));
+  if (bl.t !== 'c') els = Array.from(d.querySelectorAll(`.ks-sn[data-b="${b}"][data-s="${S.pos.s}"]${activeLang() === 'vi' && S.tr.has(b) ? '[data-l="vi"]' : ':not([data-l])'}`));
   if (!els.length) els = Array.from(d.querySelectorAll('[data-ksb]')).filter(x => x.getAttribute('data-ksb').split(' ').includes(String(b)));
   els.forEach(x => x.classList.add('ks-on'));
   if (!els.length) return;

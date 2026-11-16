@@ -309,6 +309,6 @@ window.addEventListener('load', async () => {
   const { data } = await SB.auth.getSession();
   if (data.session) startApp(data.session); else loginUI(true);
   SB.auth.onAuthStateChange((ev, session) => { if (ev === 'SIGNED_OUT') loginUI(true); });
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 });
 })();
