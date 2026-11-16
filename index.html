@@ -225,6 +225,7 @@ hr.sep { border-right: 0px; border-bottom: 0px; border-left: 0px; border-image: 
 #orig { display: none; }
 body.orig #orig { display: block; }
 body.orig #content, body.orig .reader > .secnav, body.orig #secLabel, body.orig #langSeg, body.orig #trStatus { display: none !important; }
+body.orig.listening #langSeg { display: inline-flex !important; }
 #oFrame { display: block; width: 100%; border: 0px; height: 400px; background: transparent; }
 .orig-msg { border: 1px solid var(--line); background: var(--raise); border-radius: 16px; padding: 18px 20px; font-family: var(--f-ui); font-size: 14.5px; line-height: 1.6; color: var(--ink); }
 .orig-msg p { margin: 0px; }
@@ -1851,6 +1852,7 @@ function footnoteList(k) {
 }
 function headerBottom() { return $('.bar').getBoundingClientRect().bottom; }
 function scrollToPos() {
+  if (window.O && O.on) return;
   const blk = $(`#content [data-b="${S.pos.b}"]`); if (!blk) return;
   const el = (S.pos.s > 0 && blk.querySelector(`[data-s="${S.pos.s}"]`)) || blk;
   S.ignoreScroll = true;
@@ -1867,6 +1869,7 @@ function updateProgress() {
   $('#dLabel').textContent = `Phần ${S.secIdx + 1}/${S.sections.length}`;
   $('#dPct').textContent = `${pct}% · ${sec ? sec.title : ''}`;
   let left = 0; for (let b = S.pos.b; b < S.blocks.length; b++) if (S.blocks[b].t === 'p' || S.blocks[b].t === 'h') left += S.blocks[b].x.length;
+  if (window.O && O.on) O.updateBar();
   $('#pInfo').textContent = `${pct}% · còn ≈ ${fmtDur(left / 5.6 / (165 * S.settings.rate))}${S.sleepAt ? ` · tắt sau ${Math.max(1, Math.ceil((S.sleepAt - Date.now()) / 60000))}′` : ''}${S.sleepSection ? ' · tắt cuối phần' : ''}`;
 }
 let rafP = false;
@@ -1887,6 +1890,12 @@ function trackPos() {
 function goTo(b, s = 0, opts = {}) {
   b = Math.min(Math.max(0, b), S.blocks.length - 1); s = Math.min(Math.max(0, s), countFor(b) - 1);
   const k = sectionOf(b); if (k !== S.secIdx) renderSection(k);
+  if (window.O && O.on) {
+    S.pos = { b, s }; markPos(); updateProgress();
+    if (S.mode === 'listen') O.highlight(opts.scroll !== false); else O.goBlock(b);
+    if (S.playing) speakNow();
+    return;
+  }
   S.pos = { b, s }; markPos(); updateProgress();
   if (opts.scroll !== false) scrollToPos();
   if (S.mode === 'listen') highlight(opts.scroll === false);
@@ -2071,6 +2080,7 @@ $('#voiceTest').onclick = () => {
 
 function highlight(scroll = true) {
   document.querySelectorAll('.speaking').forEach(e => e.classList.remove('speaking'));
+  if (window.O && O.on) return O.highlight(scroll);
   const blk = $(`#content [data-b="${S.pos.b}"]`); if (!blk) return;
   const el = blk.classList.contains('code') ? blk : (blk.querySelector(`[data-s="${S.pos.s}"]`) || blk);
   el.classList.add('speaking');
@@ -2187,7 +2197,7 @@ function advance(my) {
   const k = sectionOf(b);
   if (k !== S.secIdx) {
     if (S.sleepSection) { S.sleepSection = false; $('#pSleep').value = '0'; renderSection(k); S.pos = { b, s }; markPos(); stopPlay(); scrollToPos(); highlight(false); updateProgress(); toast('Hẹn giờ: dừng ở cuối phần'); return; }
-    renderSection(k); window.scrollTo({ top: 0 });
+    renderSection(k); if (!(window.O && O.on)) window.scrollTo({ top: 0 });
   }
   S.pos = { b, s }; markPos(); updateProgress(); speakNow();
 }
@@ -2500,7 +2510,7 @@ async function chirpNextSection(my) {
   if (k >= S.sections.length) { stopPlay(); toast('Đã nghe hết sách'); return; }
   if (S.sleepSection) { S.sleepSection = false; $('#pSleep').value = '0'; renderSection(k); S.pos = { b: S.sections[k].b, s: 0 }; markPos(); stopPlay(); scrollToPos(); updateProgress(); toast('Hẹn giờ: dừng ở cuối phần'); return; }
   renderSection(k); S.pos = { b: S.sections[k].b, s: 0 }; markPos();
-  if (document.visibilityState === 'visible') window.scrollTo({ top: 0 });
+  if (document.visibilityState === 'visible' && !(window.O && O.on)) window.scrollTo({ top: 0 });
   let segs;
   try { segs = await chirpSegments(k, C.lang); } catch (e) { return chirpFail(e, my); }
   if (my !== tok || !S.playing) return;
@@ -2896,7 +2906,7 @@ async function connect() {
   }, e => console.warn('study', e));
 }
 // shared with orig.js (original-layout EPUB view)
-window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls };
+window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play };
 renderLibrary();
 window.__kesachBoot = () => connect().catch(e => { console.error(e); setSync(false, 'Lỗi kết nối'); });
 })();
