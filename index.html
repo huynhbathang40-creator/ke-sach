@@ -1949,7 +1949,7 @@ function setModeUI() {
   if (window.O) O.sync();
 }
 $('#modeRead').onclick = () => { if (S.mode === 'read') return; stopPlay(); S.mode = 'read'; setModeUI(); document.querySelectorAll('.speaking').forEach(e => e.classList.remove('speaking')); };
-$('#modeListen').onclick = () => { if (S.mode === 'listen') return; S.mode = 'listen'; setModeUI(); highlight(false); };
+$('#modeListen').onclick = () => { primeAudio(); if (S.mode === 'listen') return; S.mode = 'listen'; setModeUI(); highlight(false); };
 
 /* toc */
 $('#tocBtn').onclick = () => {
@@ -2135,8 +2135,18 @@ function requestWake() { try { navigator.wakeLock?.request('screen').then(l => S
 function releaseWake() { try { S.wake?.release(); } catch {} S.wake = null; }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.playing) requestWake(); });
 
+/* iPhone only lets sound start from a tap: wake the audio/voice right away, before any waiting */
+function primeAudio() {
+  try {
+    if (useChirp()) chirpUnlock();
+    else if (synth && !S.synthPrimed) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); S.synthPrimed = true; }
+  } catch {}
+}
 function play() {
   if (!S.blocks) return;
+  primeAudio();
+  // the original-layout view moves the reading position without changing the clean section: line them up first
+  { const k = sectionOf(S.pos.b); if (k !== S.secIdx) renderSection(k); }
   if (useChirp()) {
     chirpUnlock();
     S.playing = true; updatePlayUI(); requestWake();
@@ -2184,7 +2194,11 @@ async function deviceSpeakNow() {
   const v = currentVoice(isVi ? 'vi' : 'en'); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = isVi ? 'vi-VN' : 'en-US';
   u.rate = S.settings.rate;
   u.onend = () => { if (my === tok) advance(my); };
-  u.onerror = e => { if (my !== tok || e.error === 'interrupted' || e.error === 'canceled') return; console.warn('tts', e.error); advance(my); };
+  u.onerror = e => {
+    if (my !== tok || e.error === 'interrupted' || e.error === 'canceled') return; console.warn('tts', e.error);
+    if (e.error === 'not-allowed') { stopPlay(); toast('Bấm nút ▶ để bắt đầu nghe'); return; }
+    advance(my);
+  };
   curUtter = u; synth.speak(u);
 }
 function advance(my) {
@@ -2908,7 +2922,7 @@ async function connect() {
   }, e => console.warn('study', e));
 }
 // shared with orig.js (original-layout EPUB view)
-window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play, ensureSection, sectionOf };
+window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play, ensureSection, sectionOf, primeAudio };
 renderLibrary();
 window.__kesachBoot = () => connect().catch(e => { console.error(e); setSync(false, 'Lỗi kết nối'); });
 })();

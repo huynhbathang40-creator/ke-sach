@@ -7,7 +7,7 @@
    it uses its globals (S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath…). */
 (() => {
 'use strict';
-const { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play, ensureSection, sectionOf } = window.KS;
+const { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls, sentencesOf, activeLang, play, ensureSection, sectionOf, primeAudio } = window.KS;
 const JSZIP = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
 const XHTML = 'http://www.w3.org/1999/xhtml', XLINK = 'http://www.w3.org/1999/xlink', OPS = 'http://www.idpf.org/2007/ops';
 const MIME = { css: 'text/css', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
@@ -608,6 +608,7 @@ async function onFrameClick(e) {
   const a = e.target.closest && e.target.closest('a[href]');
   if (!a && S.mode === 'listen') {
     if (frameDoc()?.getSelection()?.toString()) return;
+    primeAudio();
     const sn = e.target.closest && e.target.closest('.ks-sn'), blk = e.target.closest && e.target.closest('[data-ksb]');
     const b = sn ? +sn.getAttribute('data-b') : blk ? +blk.getAttribute('data-ksb').split(' ')[0] : NaN;
     if (Number.isFinite(b)) { goTo(b, sn ? +sn.getAttribute('data-s') : 0, { scroll: false }); if (!S.playing) play(); }
