@@ -139,13 +139,18 @@ function startRealtime() {
 const urlCache = new Map();
 const ASSETS = {
   async upload(blob) {
-    const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' })[blob.type] || 'bin';
+    const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'application/epub+zip': 'epub' })[blob.type] || 'bin';
     const id = rid() + '.' + ext;
     const { error } = await SB.storage.from('assets').upload(`${UID}/${id}`, blob, { contentType: blob.type, upsert: false });
     if (error) throw err(/quota|exceed|size/i.test(error.message) ? 'quota_or_state' : 'unavailable', error.message);
     return { id, url: '', sizeBytes: blob.size, contentType: blob.type };
   },
   async delete(id) { await SB.storage.from('assets').remove([`${UID}/${id}`]); urlCache.delete(id); },
+  async download(id) {
+    const { data, error } = await SB.storage.from('assets').download(`${UID}/${id}`);
+    if (error || !data) throw err('unavailable', error?.message || 'download failed');
+    return data;
+  },
   async list() { return { assets: [], usage: {} }; },
 };
 /* fill <img data-asset> with signed URLs (valid a day) */

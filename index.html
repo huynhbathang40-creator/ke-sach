@@ -222,6 +222,13 @@ hr.sep { border-right: 0px; border-bottom: 0px; border-left: 0px; border-image: 
 
 #readView > * { max-width: calc(var(--read-size) * 34); margin-left: auto; margin-right: auto; }
 
+#orig { display: none; }
+body.orig #orig { display: block; }
+body.orig #content, body.orig .reader > .secnav, body.orig #secLabel, body.orig #langSeg, body.orig #trStatus { display: none !important; }
+#oFrame { display: block; width: 100%; border: 0px; height: 400px; background: transparent; }
+.orig-msg { border: 1px solid var(--line); background: var(--raise); border-radius: 16px; padding: 18px 20px; font-family: var(--f-ui); font-size: 14.5px; line-height: 1.6; color: var(--ink); }
+.orig-msg p { margin: 0px; }
+.orig-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .langbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 26px; }
 
 .trstat { font-size: 12.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
@@ -768,6 +775,10 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
         <button type="button" data-lang="both" aria-pressed="false">Anh–Việt</button>
       </div>
       <span class="trstat" id="trStatus" role="status"></span>
+      <div class="seg" role="group" aria-label="Kiểu hiển thị" id="viewSeg" hidden>
+        <button type="button" data-view="orig" aria-pressed="true">Bản gốc</button>
+        <button type="button" data-view="clean" aria-pressed="false">Bản gọn</button>
+      </div>
     </div>
     <div class="sec-label" id="secLabel"></div>
     <div class="text" id="content"></div>
@@ -775,6 +786,15 @@ body.listening .jump-back { bottom: calc(168px + env(safe-area-inset-bottom, 0px
       <button class="next-card" id="nextSec" type="button"><small>Tiếp theo</small><strong></strong></button>
       <button class="prev-link" id="prevSec" type="button">← Quay lại phần trước</button>
     </nav>
+    <div id="orig">
+      <div class="orig-msg" id="oMsg" hidden></div>
+      <div id="oFrameWrap"><iframe id="oFrame" title="Nội dung sách (bản gốc)" scrolling="no"></iframe></div>
+      <nav class="secnav" id="oNav" aria-label="Cuối chương">
+        <button class="next-card" id="oNext" type="button"><small>Tiếp theo</small><strong></strong></button>
+        <button class="prev-link" id="oPrev" type="button">← Quay lại chương trước</button>
+      </nav>
+      <input id="oFile" type="file" accept=".epub,application/epub+zip" hidden>
+    </div>
   </section>
 </main>
 
@@ -1134,6 +1154,21 @@ function richText(el, ctx) {
   f = f.map(r => ({ ...r, at: Math.max(0, Math.min(x.length, r.at - lead)) }));
   return { x, m, f };
 }
+/* heading text with spaces kept between parts, e.g. <span>CHAPTER 2</span><span>Typical Data Structures</span> */
+function headText(el) {
+  let x = '', prevEl = false;
+  for (const c of Array.from(el.childNodes)) {
+    if (c.nodeType === 3) { x += c.nodeValue; prevEl = false; continue; }
+    if (c.nodeType !== 1) continue;
+    const tag = (c.localName || '').toLowerCase();
+    if (tag === 'br') { x += ' '; prevEl = false; continue; }
+    if (['script', 'style'].includes(tag)) continue;
+    const t = c.textContent || '';
+    if (x && t && !/\s$/.test(x) && !/^\s/.test(t) && (/\d$/.test(x) && /^\p{L}/u.test(t) || prevEl && /[\p{L}\d.:]$/u.test(x) && /^\p{Lu}/u.test(t))) x += ' ';
+    x += t; prevEl = true;
+  }
+  return x;
+}
 function walkHtml(el, out, dir = '', ctx = null) {
   const imgFrom = node => {
     const res = [], tag = (node.localName || '').toLowerCase();
@@ -1152,13 +1187,24 @@ function walkHtml(el, out, dir = '', ctx = null) {
     }
     if (tag === 'img' || tag === 'svg') { imgFrom(ch); continue; }
     if (['script','style','head','math','nav','hr'].includes(tag)) continue;
-    if (/^h[1-6]$/.test(tag)) { const x = norm(ch.textContent); if (x) out.push({ t: 'h', x }); }
+    if (/^h[1-6]$/.test(tag)) { const x = norm(headText(ch)); if (x) out.push({ t: 'h', x }); }
     else if (tag === 'pre') { const x = ch.textContent.replace(/^\n+|\s+$/g, ''); if (x.trim()) out.push({ t: 'c', x }); }
     else if (tag === 'table') { for (const tr of Array.from(ch.getElementsByTagNameNS('*', 'tr'))) { const x = Array.from(tr.children).map(c => norm(c.textContent)).filter(Boolean).join(' · '); if (x) out.push({ t: 'p', x }); } }
+    else if (ctx && ctx.mono && ch.children.length && (ch.getAttribute('class') || '').split(/\s+/).some(c => c && (ctx.mono.has(c) || /^(code|programlisting|source-?code|codeblock)$/i.test(c)))) {
+      const x = Array.from(ch.children).map(c => c.textContent.replace(/\u00a0/g, ' ').replace(/\s+$/, '')).join('\n').replace(/^\n+|\s+$/g, '');
+      if (x.trim()) out.push({ t: 'c', x });
+    }
     else if (Array.from(ch.children).some(c => BLOCK.has((c.localName || '').toLowerCase()))) walkHtml(ch, out, dir, ctx);
     else {
-      const isCode = /code|programlisting/i.test(ch.getAttribute('class') || '');
-      if (isCode) { const x = ch.textContent.trim(); if (x) out.push({ t: 'c', x }); }
+      const cls = ch.getAttribute('class') || '';
+      const byClass = /code|programlisting/i.test(cls) || !!(ctx && ctx.mono && cls.split(/\s+/).some(c => ctx.mono.has(c)));
+      const onlyCode = !byClass && ch.children.length === 1 && /^(code|tt|kbd|samp)$/i.test(ch.children[0].localName || '') && norm(ch.textContent) === norm(ch.children[0].textContent) && /[=(){}\[\];]|^\s*#/.test(ch.textContent);
+      if (byClass || onlyCode) {
+        const x = ch.textContent.replace(/\u00a0/g, ' ').replace(/\s+$/, '');
+        // publishers often put every code line in its own <p>: join neighbouring lines into one listing
+        const prev = out[out.length - 1];
+        if (x.trim()) { if (prev && prev.t === 'c' && prev.lines) prev.x += '\n' + x; else out.push({ t: 'c', x, lines: true }); }
+      }
       else if (ctx) { const r = richText(ch, ctx); if (r.x) out.push({ t: 'p', x: r.x, m: r.m, f: r.f }); }
       else { const x = norm(ch.textContent); if (x) out.push({ t: 'p', x }); }
       imgFrom(ch);
@@ -1182,12 +1228,17 @@ async function parseEpub(file, onProg, assets) {
   const man = {}; for (const it of Array.from(opf.getElementsByTagNameNS('*', 'item'))) man[it.getAttribute('id')] = it.getAttribute('href');
   const spine = Array.from(opf.getElementsByTagNameNS('*', 'itemref')).map(r => man[r.getAttribute('idref')]).filter(Boolean);
   const blocks = [], docs = [], notes = new Map(), ids = [];
+  // classes the book's CSS sets in a monospace font = code lines
+  const mono = new Set();
+  const scanCss = css => { for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) { if (!/font-family\s*:[^;]*(mono|courier|consol|menlo|monaco|source code|fira code|lucida console|andale)/i.test(m[2])) continue; for (const c of m[1].matchAll(/\.([A-Za-z_][\w-]*)/g)) mono.add(c[1]); } };
+  for (const it of Array.from(opf.getElementsByTagNameNS('*', 'item'))) if (/css/i.test(it.getAttribute('media-type') || '')) { const f = zip.file(resolvePath(base, it.getAttribute('href') || '')); if (f) try { scanCss(await f.async('string')); } catch {} }
   for (let i = 0; i < spine.length; i++) {
     const path = resolvePath(base, spine[i]); const f = zip.file(path); if (!f) continue;
     const str = await f.async('string');
     let doc = new DOMParser().parseFromString(str, 'application/xhtml+xml');
     if (doc.getElementsByTagName('parsererror').length) doc = new DOMParser().parseFromString(str, 'text/html');
     docs.push([path, doc]);
+    for (const st of Array.from(doc.getElementsByTagNameNS('*', 'style'))) scanCss(st.textContent || '');
     // collect footnote bodies by id so markers can show them
     for (const el of Array.from(doc.getElementsByTagNameNS('*', '*'))) {
       if (!el.getAttribute('id') || !isNoteBody(el)) continue;
@@ -1201,7 +1252,7 @@ async function parseEpub(file, onProg, assets) {
     const body = doc.getElementsByTagNameNS('*', 'body')[0] || doc.documentElement;
     const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
     ids.push([path, blocks.length]);
-    walkHtml(body, blocks, dir, { dir, file: path, notes, ids });
+    walkHtml(body, blocks, dir, { dir, file: path, notes, ids, mono });
     onProg(`Đang đọc EPUB: ${i + 1}/${docs.length} chương`);
   }
   // resolve footnote text and internal links to block objects
@@ -1531,12 +1582,14 @@ async function saveBook(res, format, status) {
   return id;
 }
 async function deleteBook(id) {
+  const ep = S.books.find(b => b.id === id)?.epub;
   await S.booksCol.doc(id).delete();
   try { await window.audioCache?.removeBook(id); } catch (e) { console.warn(e); }
   try {
     const assets = window.claude?.use ? await window.claude.use('assets') : null;
     const q = await S.chunksCol.where('bookId', '==', id).get();
-    const ids = []; q.docs.forEach(d => (d.data().blocks || []).forEach(b => { if (b.t === 'img' && b.id) ids.push(b.id); }));
+    const ids = []; if (ep) { ids.push(ep); window.O?.forget(ep); }
+    q.docs.forEach(d => (d.data().blocks || []).forEach(b => { if (b.t === 'img' && b.id) ids.push(b.id); }));
     if (assets) for (const a of new Set(ids)) { try { await assets.delete(a); } catch (e) { console.warn(e); } }
   } catch (e) { console.warn(e); }
   for (const col of [S.chunksCol, S.sumCol, S.trCol, S.studyCol]) {
@@ -1643,7 +1696,8 @@ async function importFile(file) {
     else if (ext === 'epub') res = await parseEpub(file, stat, assets);
     else if (['txt', 'md', 'markdown'].includes(ext)) res = parsePlain(await file.text(), ext !== 'txt', file.name);
     else throw new Error('Chỉ hỗ trợ PDF, EPUB, TXT, MD.');
-    await saveBook(res, ext === 'markdown' ? 'md' : ext, stat);
+    const newId = await saveBook(res, ext === 'markdown' ? 'md' : ext, stat);
+    if (ext === 'epub' && window.O) { stat('Đang lưu bản gốc của sách…'); try { await O.attach(newId, file); } catch (e) { console.warn('epub original', e); } }
     stat(`Đã thêm "${res.title}".`); setTimeout(() => { closeSheets(); stat(''); }, 900);
   } catch (e) {
     console.error(e);
@@ -1732,6 +1786,7 @@ async function openBook(id, mode) {
   renderSection(sectionOf(b)); scrollToPos(); updateProgress();
   if (S.mode === 'listen') highlight(false);
   if (p.t && p.dev !== DEV) toast(`Tiếp tục từ ${p.devName}, ${rel(p.t)}`);
+  if (window.O) O.onOpen();
 }
 function renderSection(k) {
   S.secIdx = k; const sec = S.sections[k], end = secEnd(k); const h = [];
@@ -1816,7 +1871,7 @@ function updateProgress() {
 }
 let rafP = false;
 window.addEventListener('scroll', () => {
-  if (S.view !== 'reader' || S.playing || S.ignoreScroll || !S.blocks || rafP) return;
+  if (S.view !== 'reader' || S.playing || S.ignoreScroll || !S.blocks || rafP || (window.O && O.on)) return;
   rafP = true; requestAnimationFrame(() => { rafP = false; trackPos(); });
 }, { passive: true });
 function trackPos() {
@@ -1837,8 +1892,8 @@ function goTo(b, s = 0, opts = {}) {
   if (S.mode === 'listen') highlight(opts.scroll === false);
   if (S.playing) speakNow();
 }
-$('#dPrev').onclick = () => { if (S.secIdx > 0) goTo(S.sections[S.secIdx - 1].b); };
-$('#dNext').onclick = () => { if (S.secIdx < S.sections.length - 1) goTo(S.sections[S.secIdx + 1].b); };
+$('#dPrev').onclick = () => { if (window.O && O.on) return O.prev(); if (S.secIdx > 0) goTo(S.sections[S.secIdx - 1].b); };
+$('#dNext').onclick = () => { if (window.O && O.on) return O.next(); if (S.secIdx < S.sections.length - 1) goTo(S.sections[S.secIdx + 1].b); };
 $('#dMid').onclick = () => $('#tocBtn').click();
 document.addEventListener('keydown', e => {
   if (S.view !== 'reader' || e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1847,7 +1902,7 @@ document.addEventListener('keydown', e => {
 });
 $('#prevSec').onclick = () => goTo(S.sections[Math.max(0, S.secIdx - 1)].b);
 $('#nextSec').onclick = () => goTo(S.sections[Math.min(S.sections.length - 1, S.secIdx + 1)].b);
-$('#backBtn').onclick = () => { stopPlay(); flushPos(); clearTrQueue(); C.cur = null; C.segs = null; C.segCache.clear(); C.urls.forEach(u => URL.revokeObjectURL(u)); C.urls.clear(); $('#fnPop').hidden = true; $('#jumpBack').hidden = true; $('#progFill').style.width = '0'; S.book = null; S.blocks = null; showView('library'); renderLibrary(); window.scrollTo(0, 0); };
+$('#backBtn').onclick = () => { stopPlay(); flushPos(); if (window.O) O.close(); clearTrQueue(); C.cur = null; C.segs = null; C.segCache.clear(); C.urls.forEach(u => URL.revokeObjectURL(u)); C.urls.clear(); $('#fnPop').hidden = true; $('#jumpBack').hidden = true; $('#progFill').style.width = '0'; S.book = null; S.blocks = null; showView('library'); renderLibrary(); window.scrollTo(0, 0); };
 function showFootnote(key) {
   const [b, i] = key.split(':').map(Number); const r = S.blocks[b]?.f?.[i]; if (!r) return;
   $('#fnPopN').textContent = 'Chú thích ' + r.n;
@@ -1858,7 +1913,7 @@ function showFootnote(key) {
 }
 $('#fnPopClose').onclick = () => { $('#fnPop').hidden = true; };
 let jumpTimer = null;
-$('#jumpBack').onclick = () => { const p = S.jumpFrom; $('#jumpBack').hidden = true; S.jumpFrom = null; if (p) goTo(p.b, p.s); };
+$('#jumpBack').onclick = () => { if (window.O && O.on) return O.back(); const p = S.jumpFrom; $('#jumpBack').hidden = true; S.jumpFrom = null; if (p) goTo(p.b, p.s); };
 $('#content').addEventListener('click', e => {
   const fb = e.target.closest('.fnref button'); if (fb) { e.preventDefault(); e.stopPropagation(); showFootnote(fb.dataset.fn); return; }
   const x = e.target.closest('a.xref'); if (x) {
@@ -1883,12 +1938,15 @@ function setModeUI() {
   $('#modeRead').setAttribute('aria-pressed', S.mode === 'read'); $('#modeListen').setAttribute('aria-pressed', S.mode === 'listen');
   $('#readView').classList.toggle('listen', S.mode === 'listen');
   showView(S.view);
+  if (window.O) O.sync();
 }
 $('#modeRead').onclick = () => { if (S.mode === 'read') return; stopPlay(); S.mode = 'read'; setModeUI(); document.querySelectorAll('.speaking').forEach(e => e.classList.remove('speaking')); };
 $('#modeListen').onclick = () => { if (S.mode === 'listen') return; S.mode = 'listen'; setModeUI(); highlight(false); };
 
 /* toc */
 $('#tocBtn').onclick = () => {
+  if (window.O && O.on) return O.toc();
+  document.querySelector('#tocSheet .hint').hidden = false;
   $('#toc').innerHTML = S.sections.map((s, i) => `<li><button type="button" data-i="${i}" aria-current="${i === S.secIdx}"><span class="n">${i + 1}</span><span>${esc(s.title)}</span></button></li>`).join('');
   openSheet('#tocSheet');
   const cur = $('#toc [aria-current="true"]'); if (cur) cur.scrollIntoView({ block: 'center' });
@@ -1924,6 +1982,7 @@ function onRemoteBooks() {
     S.lastLocalT = p.t;
     if (p.b === S.pos.b && p.s === S.pos.s) return;
     const b = Math.min(p.b, S.blocks.length - 1);
+    if (window.O && O.on) { S.pos = { b, s: 0 }; O.goBlock(b); toast(`Đã nhảy tới chỗ bạn dừng trên ${p.devName}`); return; }
     const k = sectionOf(b); if (k !== S.secIdx) renderSection(k);
     S.pos = { b, s: Math.min(p.s || 0, countFor(b) - 1) }; scrollToPos(); updateProgress();
     if (S.mode === 'listen') highlight(false);
@@ -2775,6 +2834,7 @@ function applySettings() {
   document.querySelectorAll('input[name="codeMode"]').forEach(r => r.checked = r.value === S.settings.codeMode);
   document.querySelectorAll('#langSeg [data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === S.settings.lang));
   $('#pLang').hidden = S.settings.lang !== 'both'; $('#pLang').value = S.settings.listenLang || 'en';
+  if (window.O) O.restyle();
 }
 let setTimer = null, settingsSaving = Promise.resolve();
 function saveSettings() {
@@ -2835,9 +2895,12 @@ async function connect() {
     renderReviewBanner(); onStudyChanged();
   }, e => console.warn('study', e));
 }
+// shared with orig.js (original-layout EPUB view)
+window.KS = { S, $, esc, toast, markPos, goTo, headerBottom, loadScript, resolvePath, openSheet, closeSheets, saveSettings, ls };
 renderLibrary();
 window.__kesachBoot = () => connect().catch(e => { console.error(e); setSync(false, 'Lỗi kết nối'); });
 })();
 </script>
+<script src="/orig.js"></script>
 </body>
 </html>
